@@ -36,9 +36,7 @@ jobs:
 
       - name: Create Icon (.ico)
         run: |
-          # Use ImageMagick (pre-installed on runner) to convert SVG to ICO
           magick convert -background none "assets/icon.svg" -define icon:auto-resize="256,128,64,48,32,16" "assets/icon.ico"
-          magick convert -background none "assets/icon.svg" -resize 256x256 "assets/icon.png"
 
       - name: Build with PyInstaller
         run: |
@@ -89,8 +87,6 @@ jobs:
           sips -z 512 512   assets/icon.svg --out CineBridgePro.iconset/icon_256x256@2x.png
           iconutil -c icns CineBridgePro.iconset
           mv CineBridgePro.icns assets/icon.icns
-          # Create PNG for internal usage
-          sips -z 512 512 assets/icon.svg --out assets/icon.png
 
       - name: Build with PyInstaller
         run: |
@@ -108,7 +104,7 @@ jobs:
           files: dist/CineBridgePro_macOS.zip
 
   # =========================================================
-  # 3. LINUX BUILD (.deb with FFMPEG dependency)
+  # 3. LINUX BUILD (.deb + Portable Binary)
   # =========================================================
   build-linux:
     runs-on: ubuntu-latest
@@ -131,22 +127,27 @@ jobs:
 
       - name: Build Binary
         run: |
-          # Note: We do NOT bundle ffmpeg here. We rely on system dependency.
+          # Build the raw binary
           pyinstaller src/cinebridge.py --noconsole --onefile --name "cinebridgepro" --icon "assets/icon.png" --add-data "assets:assets"
 
-      - name: Create DEB Package Structure
+      - name: Prepare Artifacts
         run: |
+          # 1. Prepare DEB Structure
           mkdir -p dist/deb/usr/local/bin
           mkdir -p dist/deb/usr/share/applications
           mkdir -p dist/deb/usr/share/icons/hicolor/512x512/apps
           mkdir -p dist/deb/DEBIAN
 
-          # Copy Binary and Icon
+          # Copy Binary for DEB
           cp dist/cinebridgepro dist/deb/usr/local/bin/
           cp assets/icon.png dist/deb/usr/share/icons/hicolor/512x512/apps/cinebridgepro.png
           chmod 755 dist/deb/usr/local/bin/cinebridgepro
 
-          # Create Desktop Entry
+          # 2. Prepare Portable Binary (Rename for clarity)
+          mv dist/cinebridgepro dist/CineBridgePro_Linux_Portable
+          chmod +x dist/CineBridgePro_Linux_Portable
+
+          # Create Desktop Entry for DEB
           cat <<EOF > dist/deb/usr/share/applications/cinebridgepro.desktop
           [Desktop Entry]
           Name=CineBridge Pro
@@ -158,8 +159,7 @@ jobs:
           Categories=Video;AudioVideo;
           EOF
 
-          # Create Control File (Defines dependencies)
-          # Note: Depends on ffmpeg
+          # Create Control File for DEB
           cat <<EOF > dist/deb/DEBIAN/control
           Package: cinebridgepro
           Version: ${{ github.ref_name }}
@@ -172,15 +172,17 @@ jobs:
            CineBridge Pro automates video ingest, proxy generation, and delivery.
           EOF
           
-          # Fix Version String if it starts with 'v' (Debian doesn't like 'v4.1', needs '4.1')
+          # Clean version string for control file
           sed -i 's/Version: v/Version: /g' dist/deb/DEBIAN/control
 
       - name: Build DEB
         run: |
           dpkg-deb --build dist/deb cinebridgepro_linux_amd64.deb
 
-      - name: Upload Artifact
+      - name: Upload Artifacts
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: cinebridgepro_linux_amd64.deb
+          files: |
+            cinebridgepro_linux_amd64.deb
+            dist/CineBridgePro_Linux_Portable
